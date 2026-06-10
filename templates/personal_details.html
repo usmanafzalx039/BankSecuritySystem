@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Details</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='personal_details.css') }}"> 
+</head>
+<body>
+    <div class="aurora">
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+    </div>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-item" href="{{ url_for('dashboard') }}">Dashboard</div>
+            <div class="sidebar-item active" href="{{ url_for('personal_details') }}">Details</div>
+            <div class="sidebar-item" href="{{ url_for('limit') }}">Limit</div>
+            <div class="sidebar-item" href="{{ url_for('download_transcript') }}">Download Transcript</div>
+            <div class="sidebar-item signout" href="{{ url_for('logout') }}">Sign Out</div>
+        </div>
+
+        <div class="main-content">
+            <h1>👤 Account Details</h1>
+            
+            <div class="details-grid">
+                
+                <div class="details-section">
+                    <div class="card">
+                        <div class="card-title">Account Information</div>
+                        <div class="detail-item">
+                            <span class="detail-label">Account Name:</span>
+                            <!-- Editable -->
+                            <span class="detail-value" data-field="username">{{ user.username }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Account Type:</span>
+                            <!-- Locked -->
+                            <span class="detail-value purple-highlight" data-field="role">{{ user.role|capitalize }} Account</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Account ID:</span>
+                            <!-- Locked -->
+                            <span class="detail-value" data-field="account_id">{{ user.id }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Daily Limit:</span>
+                            <!-- Locked -->
+                            <span class="detail-value" data-field="daily_limit">${{ user.daily_limit }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Status:</span>
+                            <!-- Locked -->
+                            <span class="detail-value" data-field="status">Active</span>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">Contact Information</div>
+                        <div class="detail-item">
+                            <span class="detail-label">Phone:</span>
+                            <!-- Editable -->
+                            <span class="detail-value" data-field="phone">{{ user.phone }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Address:</span>
+                            <!-- Editable -->
+                            <span class="detail-value" data-field="address" style="text-align: right;">{{ user.address }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Email:</span>
+                            <!-- Editable -->
+                            <span class="detail-value" data-field="email" style="text-align: right;">{{ user.email }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="profile-section">
+                    <div class="card profile-card">
+                        <div class="profile-content">
+                            <div class="avatar" id="profileAvatar">{{ user.username[0] }}</div>
+                            <div class="profile-name" id="profileName">{{ user.username }}</div>
+                            <div class="profile-email" id="profileEmail">{{ user.email }}</div>
+                            
+                            <div class="security-details">
+                                <div class="card-title" style="border-bottom: none; font-size: 1.4em; margin-bottom: 5px;">Security Status</div>
+                                 <div class="detail-item" style="border-bottom: none; padding: 5px 0;">
+                                    <span class="detail-label" style="font-size: 1em;">Last Login:</span>
+                                    
+                                    <!-- FIXED: Replaced "Today" with the actual variable -->
+                                    <span class="detail-value" style="font-size: 1em;">{{ user.last_login }}</span>
+                                
+                                </div>
+                                <div class="detail-item" style="border-bottom: none; padding: 5px 0;">
+                                    <span class="detail-label" style="font-size: 1em;">2FA Status:</span>
+                                    <span class="detail-value purple-highlight" style="font-size: 1em;">Enabled</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="action-button" id="editButton">Edit Profile</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='personal_details.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='history.css') }}"> 
+</head>
+<body>
+    <div class="aurora">
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+    </div>
+
+    <div class="container">
+        <a href="/dashboard" class="back-button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            Back to Dashboard
+        </a>
+
+        <div class="main-content">
+            <h1 class="history-header">⏱️ Transaction History</h1>
+
+            <div class="filter-section">
+                <button class="filter-button active">All Transactions</button>
+                <button class="filter-button">Deposits</button>
+                <button class="filter-button">Withdrawals</button>
+                <button class="filter-button">Transfers</button>
+            </div>
+
+            <div class="transaction-list">
+                <div class="transaction-item" data-type="deposit">
+                    <div class="transaction-details">
+                        <div class="transaction-title">Salary Deposit - ACME Corp</div>
+                        <div class="transaction-date">Nov 25, 2025</div>
+                    </div>
+                    <div class="transaction-amount credit">+ $5,200.00</div>
+                </div>
+                
+                <div class="transaction-item" data-type="withdrawal">
+                    <div class="transaction-details">
+                        <div class="transaction-title">Online Shopping - Amazon</div>
+                        <div class="transaction-date">Nov 24, 2025</div>
+                    </div>
+                    <div class="transaction-amount debit">- $125.99</div>
+                </div>
+
+                <div class="transaction-item" data-type="transfer">
+                    <div class="transaction-details">
+                        <div class="transaction-title">Transfer to John Doe (8887)</div>
+                        <div class="transaction-date">Nov 24, 2025</div>
+                    </div>
+                    <div class="transaction-amount debit">- $500.00</div>
+                </div>
+
+                <div class="transaction-item" data-type="withdrawal">
+                    <div class="transaction-details">
+                        <div class="transaction-title">ATM Withdrawal</div>
+                        <div class="transaction-date">Nov 23, 2025</div>
+                    </div>
+                    <div class="transaction-amount debit">- $200.00</div>
+                </div>
+
+                <div class="transaction-item" data-type="deposit">
+                    <div class="transaction-details">
+                        <div class="transaction-title">Refund - Electric Bill</div>
+                        <div class="transaction-date">Nov 22, 2025</div>
+                    </div>
+                    <div class="transaction-amount credit">+ $45.10</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='history.js') }}"></script>
+</body>
+</html>

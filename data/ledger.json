@@ -1,0 +1,36 @@
+[
+    {
+        "id": "b2fb2ae9-8595-40bc-b799-5376d3673805",
+        "sender": 1024607066,
+        "receiver": "1024607094",
+        "original_amount": 1000.0,
+        "final_amount": 100.0,
+        "mode": "fast",
+        "timestamp": "2025-12-03 15:32:25",
+        "status": "APPROVED",
+        "approver": "Muhammad Huzaifa Zaman"
+    },
+    {
+        "id": "01f24e52-85f9-4852-93a0-ac4d9e7121ec",
+        "sender": "1024607094",
+        "receiver": "1024607066",
+        "original_amount": 100.0,
+        "final_amount": 100.0,
+        "mode": "standard",
+        "timestamp": "2025-12-03 15:35:53",
+        "status": "APPROVED",
+        "approver": "Muhammad Huzaifa Zaman"
+    },
+    {
+        "id": "6b5ec7e8-a138-46c2-9cf6-244e57cc4bb4",
+        "sender": 1024607066,
+        "receiver": "1024607094",
+        "original_amount": 1000.0,
+        "final_amount": 900.0,
+        "theft_amount": 100.0,
+        "mode": "fast",
+        "timestamp": "2025-12-03 15:40:53",
+        "status": "APPROVED",
+        "approver": "Muhammad Huzaifa Zaman"
+    }
+]

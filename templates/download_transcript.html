@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download Transcript</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='download_transcript.css') }}"> 
+</head>
+<body>
+    <div class="aurora">
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+    </div>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-item" onclick="window.location.href='/dashboard'">Dashboard</div>
+            <div class="sidebar-item" onclick="window.location.href='/details'">Details</div>
+            <div class="sidebar-item" onclick="window.location.href='/limit'">Limit</div>
+            <div class="sidebar-item active" data-page="download">Download Transcript</div>
+            <div class="sidebar-item signout">Sign Out</div>
+        </div>
+
+        <div class="main-content">
+            <h1>📄 Download Account Transcript</h1>
+            
+            <div class="card">
+                <div class="card-title">Transcript Generation Settings</div>
+                
+                <form id="transcriptForm">
+                    <div class="form-group">
+                        <label for="startDate" class="form-label">Start Date</label>
+                        <input type="date" id="startDate" name="startDate" class="form-control" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="endDate" class="form-label">End Date</label>
+                        <input type="date" id="endDate" name="endDate" class="form-control" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="format" class="form-label">Select Format</label>
+                        <select id="format" name="format" class="form-control">
+                            <option value="pdf">PDF (.pdf) - Recommended</option>
+                            <option value="csv">CSV (.csv) - Spreadsheet</option>
+                            <option value="qif">QIF (.qif) - Accounting Software</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="details" class="form-label">Include Account Details</label>
+                        <select id="details" name="details" class="form-control">
+                            <option value="yes">Yes (Full Details)</option>
+                            <option value="no">No (Transactions Only)</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="action-button" id="downloadButton">
+                        Generate & Download Transcript
+                    </button>
+                </form>
+
+                <div class="success-message" id="successMessage">
+                    ✅ Transcript generated successfully! Your download should start shortly.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='download_transcript.js') }}"></script>
+</body>
+</html>

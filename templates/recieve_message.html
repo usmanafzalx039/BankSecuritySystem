@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notifications</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='recieve_message.css') }}">
+</head>
+<body>
+    <div class="aurora">
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+    </div>
+
+    <div id="paymentPopup" class="payment-toast">
+        <div class="toast-content">
+            <div class="toast-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+            <div class="toast-details">
+                <span class="toast-label">Payment Received</span>
+                <span class="toast-amount" id="popupAmount">+$0.00</span>
+                <span class="toast-sender" id="popupSender">from Unknown</span>
+            </div>
+            <button class="toast-close" onclick="closePopup()">&times;</button>
+        </div>
+        <div class="toast-progress"></div>
+    </div>
+
+    <div class="container">
+        <div class="main-content">
+            
+            <a href="/dashboard" class="back-nav">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                Back to Dashboard
+            </a>
+
+            <h1 class="page-title">Incoming Verification Queue</h1>
+            
+            <div class="transaction-list">
+                <div class="transaction-item" onclick="openVerification(0)">
+                    <div class="t-info">
+                        <h4>Received from Alice Corp</h4>
+                        <p>ID: TXN-8842-XJ9</p>
+                    </div>
+                    <div class="t-right">
+                        <div class="t-amount">+$5,400.00</div>
+                        <div class="t-status">Ready to Verify</div>
+                    </div>
+                </div>
+
+                <div class="transaction-item" onclick="openVerification(1)">
+                    <div class="t-info">
+                        <h4>Received from Unknown Node</h4>
+                        <p>ID: TXN-9911-BAD</p>
+                    </div>
+                    <div class="t-right">
+                        <div class="t-amount">+$99,000.00</div>
+                        <div class="t-status">Ready to Verify</div>
+                    </div>
+                </div>
+
+                <div class="transaction-item" onclick="openVerification(2)">
+                    <div class="t-info">
+                        <h4>Received from Server 4</h4>
+                        <p>ID: TXN-3321-AZ2</p>
+                    </div>
+                    <div class="t-right">
+                        <div class="t-amount">+$1,250.00</div>
+                        <div class="t-status">Ready to Verify</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button onclick="simulatePayment()" style="position: fixed; bottom: 20px; right: 20px; z-index: 50; padding: 15px 30px; background: #00ff9d; border: none; border-radius: 30px; font-weight: bold; cursor: pointer; color: #1a1a1a; box-shadow: 0 0 15px rgba(0,255,157,0.4);">
+        Test Received Popup
+    </button>
+
+    <div class="modal-overlay" id="verifyModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">Verify Transaction Integrity</h2>
+                <button class="close-btn" onclick="closeAllModals()">&times;</button>
+            </div>
+            
+            <div class="data-group">
+                <span class="data-label">Transaction ID</span>
+                <div class="data-value received" id="modalTxnId">...</div>
+            </div>
+
+            <div class="data-group">
+                <span class="data-label">Encrypted Data Block (Received)</span>
+                <div class="data-value received" id="modalData">...</div>
+            </div>
+
+            <div class="data-group">
+                <span class="data-label">Immutable Hash (Received from Sender)</span>
+                <div class="data-value received" id="modalReceivedHash">...</div>
+            </div>
+
+            <button class="verify-btn" id="verifyBtn" onclick="processVerification()">
+                <span id="btnText">Verify Hash Match</span>
+                <div class="loader" id="btnLoader"></div>
+            </button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="successModal">
+        <div class="modal result-modal">
+            <div class="result-icon success-theme">
+                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </div>
+            <h2 class="modal-title success-theme">VERIFIED</h2>
+            <p class="result-message">The generated local hash matches the received hash. Data Integrity confirmed.</p>
+            <div class="data-group">
+                <span class="data-label">Generated Local Hash</span>
+                <div class="data-value" id="successHashDisplay">...</div>
+            </div>
+            <button class="verify-btn" onclick="closeAllModals()">Close</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="failModal">
+        <div class="modal result-modal">
+            <div class="result-icon error-theme">
+                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <h2 class="modal-title error-theme">WARNING: NOT VERIFIED</h2>
+            <p class="result-message">Hash Mismatch! The data may have been tampered with during transmission.</p>
+            <div class="data-group">
+                <span class="data-label">Generated Local Hash (Mismatch)</span>
+                <div class="data-value" id="failHashDisplay" style="color:#ff4757; border-color:#ff4757;">...</div>
+            </div>
+            <button class="verify-btn" style="background:#ff4757;" onclick="closeAllModals()">Reject Transaction</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='recieve_message.js') }}"></script>
+</body>
+</html>

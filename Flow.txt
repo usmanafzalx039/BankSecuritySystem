@@ -1,0 +1,537 @@
+Project setup (first things first)
+
+Create project folders
+
+backend/, backend/modules/, backend/data/, frontend/
+
+Put JSON files in backend/data: users.json, transactions.json, snapshots/
+
+Choose one place for core state (in-memory while running, persisted to JSON files on commit).
+
+Make a small README that lists which module each team member owns.
+
+Implementation order (high level)
+
+Core data classes and JSON loader/saver
+
+Hash utilities (hash_data, tx string)
+
+Transaction creation and account operations
+
+Simple in-memory circular queue with JSON persistence
+
+Ledger append/get/search
+
+Merkle tree build and verify
+
+Snapshot and rollback
+
+Validation authority (approve/deny/tamper)
+
+Reporting, performance measurements
+
+Flask wrapper and WebSocket hooks
+
+Tests, demo scripts, seed data
+
+Work in small increments. After each major step add unit tests and a manual demo script.
+
+Module: Core data classes (file: modules/models.md or modules/models.py)
+
+Goal: stable objects and JSON mapping.
+
+Transaction class (interface)
+
+Purpose: represent a transaction.
+
+Fields to set: tx_id, sender_id, receiver_id, amount, timestamp, status (PENDING/PROCESSED/REJECTED/ROLLED_BACK), tx_hash, ledger_index (nullable), meta.
+
+When to build: on user submit or when loading from JSON.
+
+Tests: create transaction, check default status=PENDING, timestamp present.
+
+Failure modes: missing fields, negative amount. Validate inputs early.
+
+Account class
+
+Purpose: represent an account.
+
+Fields: account_id, pin_hash, balance, role (user/admin), locked_until (nullable).
+
+When to use: read from users.json at start.
+
+Tests: create account, check PIN hash not equals plaintext, check sufficient balance check.
+
+Persistence contract
+
+Purpose: load and save users and transactions as JSON.
+
+Behavior: atomic write (write temp file then rename).
+
+Tests: saving then loading returns same data.
+
+Failure modes: file access errors, concurrent saves — keep saves short and infrequent.
+
+Reason: clear data model prevents subtle bugs later.
+
+Module: Hash utilities (file: modules/hash_utils.py)
+
+Functions: hash_data(data), transaction_to_string(tx), compute_transaction_hash(tx)
+
+hash_data(data)
+
+Purpose: single source for SHA256 hashing.
+
+Input: canonical string.
+
+Output: hex digest string.
+
+Tests: known input -> known hash.
+
+transaction_to_string(transaction)
+
+Purpose: produce canonical ordering of fields for hashing.
+
+Input: Transaction object or dict.
+
+Output: deterministic string (id|timestamp|sender|receiver|amount|status|meta).
+
+Note: use consistent separators and format numbers/timestamps the same way.
+
+Tests: same transaction object always yields same string. Different fields change string.
+
+compute_transaction_hash(transaction)
+
+Purpose: wrap transaction_to_string then hash_data.
+
+Output: tx_hash stored in transaction.
+
+Side effect: set tx.tx_hash if missing.
+
+Tests: compute, store, and verify later.
+
+Reason: Merkle tree correctness depends on consistent transaction hashing.
+
+Module: Account operations (file: modules/accounts.py)
+
+Functions: create_account, verify_login, update_balance, get_account_details
+
+create_account(account_id, pin)
+
+Purpose: create and persist a demo account.
+
+Input: id and plaintext pin.
+
+Output: new Account object, saved to users.json.
+
+Notes: hash PIN immediately.
+
+verify_login(account_id, pin)
+
+Purpose: authenticate user.
+
+Input: id, plaintext pin.
+
+Output: True/False and account data (or error reason).
+
+Tests: valid login succeeds, wrong pin fails, locked account fails.
+
+update_balance(account_id, delta_amount)
+
+Purpose: adjust balance by positive or negative amount.
+
+Input: id, delta (can be negative).
+
+Output: new balance.
+
+Side effects: persist to users.json or mark change for snapshot.
+
+Edge cases: insufficient funds must return error and not change balance.
+
+get_account_details(account_id)
+
+Purpose: read-only view for UI.
+
+Output: account data without PIN hash.
+
+Tests: cannot reveal pin_hash.
+
+Reason: keep account state consistent and auditable.
+
+Module: Queue (file: modules/queue.py)
+
+Functions: enqueue_transaction, dequeue_transaction, peek_transaction, is_queue_empty
+
+Choose implementation: circular in-memory queue with persistent pending queue in transactions.json OR DB-like pending list. For demo choose JSON-backed queue.
+
+enqueue_transaction(transaction)
+
+Purpose: add transaction to end of queue.
+
+Input: Transaction object
+
+Side effect: append to pending list in memory and save JSON.
+
+Tests: enqueued tx appears in pending list.
+
+dequeue_transaction()
+
+Purpose: remove next pending tx for processing.
+
+Output: Transaction object
+
+Side effect: mark tx as PROCESSING or move to worker.
+
+Edge: empty queue returns None.
+
+peek_transaction()
+
+Purpose: view next tx without removing.
+
+Tests: peek doesn't remove.
+
+is_queue_empty()
+
+Purpose: helper for worker loop and UI.
+
+Reason: queue models arrival and allows controlled sequential processing.
+
+Module: Ledger (file: modules/ledger.py)
+
+Functions: add_to_ledger, remove_from_ledger, get_ledger, get_transaction_by_id
+
+add_to_ledger(transaction)
+
+Preconditions: transaction.status == PENDING or PROCESSING and balance checks passed.
+
+Actions:
+
+assign ledger_index = last_index + 1
+
+set status = PROCESSED
+
+set tx_hash if missing
+
+append to transactions list (persist)
+
+update account balances atomically
+
+Output: ledger_index
+
+Tests: after call, ledger contains tx at end, balances changed correctly.
+
+remove_from_ledger(transaction_id)
+
+Purpose: logical removal for rollback flow.
+
+Action: set status = ROLLED_BACK or REJECTED (do not physically delete unless snapshot strategy dictates)
+
+Output: success boolean
+
+Tests: status change only; ledger order preserved.
+
+get_ledger(offset=0, limit=100)
+
+Purpose: return ledger entries for UI
+
+Output: list ordered by ledger_index
+
+get_transaction_by_id(transaction_id)
+
+Purpose: look up tx quickly
+
+Output: transaction or None
+
+Reason: ledger is the source of truth. Keep append atomic to avoid partial commits.
+
+Module: Merkle tree (file: modules/merkle.py)
+
+Functions: build_merkle_tree, get_merkle_root, get_merkle_proof, verify_merkle_proof, verify_integrity, locate_tampered_transaction
+
+build_merkle_tree(transaction_list)
+
+Input: list of processed transaction hashes in ledger order
+
+Output: root hash and optionally the full tree structure (levels)
+
+Implementation detail: if odd leaves duplicate last leaf to pair
+
+Tests: small known lists produce expected root; consistency with repeated calls.
+
+get_merkle_root()
+
+Purpose: convenience to build from current ledger and return root
+
+Output: current root
+
+Tests: called after add_to_ledger, root changes.
+
+get_merkle_proof(tx_index)
+
+Purpose: compute path (sibling hashes + position) for a leaf
+
+Output: proof list to show in UI and verify
+
+verify_merkle_proof(leaf_hash, proof, root)
+
+Purpose: verify client-side or server-side that leaf is in tree
+
+Output: boolean
+
+verify_integrity()
+
+Purpose: compute root from ledger and compare to stored root (snapshot or last_root)
+
+Output: (valid:bool, report{expected_root, computed_root, mismatch_info})
+
+Tests: tamper ledger then detect invalid.
+
+locate_tampered_transaction()
+
+Purpose: efficient search for smallest index where mismatch occurs
+
+Approach: binary-split halves and compare roots to find differing half, repeat to single tx
+
+Output: transaction index or id for report
+
+Reason: Merkle functions are the alarm system. Keep them fast and deterministic.
+
+Module: Snapshot and rollback (file: modules/rollback.py)
+
+Functions: create_snapshot, rollback_to_last_valid_state, restore_balances
+
+create_snapshot()
+
+Purpose: store a complete safe state
+
+What to store: accounts balances JSON, last processed ledger_index, merkle_root, timestamp
+
+How: write snapshot_{index}.json in snapshots/
+
+Tests: snapshot file exists and loads to same state.
+
+rollback_to_last_valid_state(target_snapshot_id or last_valid)
+
+Purpose: restore state when integrity fails
+
+Steps:
+
+load snapshot data
+
+replace in-memory accounts and ledger state (mark rolled_back transactions)
+
+persist current transactions.json and users.json accordingly
+
+build merkle root from restored ledger and verify matches snapshot root
+
+create a new audit log entry
+
+Output: restore status, restored index, new merkle root
+
+Edge: if no snapshot exists, fail safe and require manual admin.
+
+restore_balances(snapshot)
+
+Purpose: helper to overwrite account balances from snapshot
+
+Tests: balances revert exactly to snapshot values
+
+Design note: snapshot frequency controls rollback granularity and storage cost. For demo, snapshot after each processed tx is simplest. For scale, snapshot every N tx.
+
+Reason: snapshots make rollback deterministic and easy to explain.
+
+Module: Validation Authority (file: modules/validation.py)
+
+Functions: get_pending_transactions, approve_transaction, deny_transaction, tamper_transaction
+
+get_pending_transactions()
+
+Purpose: list PENDING transactions for admin UI
+
+Output: list
+
+approve_transaction(transaction_id)
+
+Purpose: move a PENDING tx to processing, then call add_to_ledger and create_snapshot and build merkle
+
+Steps:
+
+get tx from pending queue
+
+validate accounts and balance again
+
+call add_to_ledger(tx)
+
+call build_merkle_tree and store root
+
+call create_snapshot
+
+broadcast update
+
+Output: success and new root
+
+Tests: approved tx becomes PROCESSED and visible in ledger; balances update.
+
+deny_transaction(transaction_id)
+
+Purpose: reject and remove from pending
+
+Action: mark status = REJECTED, log event
+
+Output: status
+
+tamper_transaction(transaction_id, field, new_value)
+
+Purpose: demo-only function. Simulate insider attack by changing stored transaction directly.
+
+Constraints:
+
+Only allowed in demo mode and admin token
+
+Does not recompute merkle root
+
+Logs the action in audit
+
+Output: modified tx
+
+Tests: after tamper, verify_integrity reports mismatch.
+
+Reason: keep admin actions explicit and auditable.
+
+Module: Reporting & monitoring (file: modules/reporting.py)
+
+Functions: generate_integrity_report, log_event, export_ledger
+
+generate_integrity_report()
+
+Purpose: human readable report for UI or CLI
+
+Content: computed_root, stored_root, valid flag, mismatch_id (if any), timestamp, total txs
+
+Output: structured dict to render to HTML.
+
+log_event(event_type, description)
+
+Purpose: append to audit.log (text) and store structured audit row if needed
+
+Output: none
+
+Tests: events appear in log with timestamp.
+
+export_ledger(filename)
+
+Purpose: save current ledger snapshot as JSON or CSV for demo
+
+Output: file path; use for assignment submission
+
+Reason: these functions support grading and demos.
+
+Module: Performance & testing (file: modules/perf.py)
+
+Functions: measure_time_without_merkle, measure_time_with_merkle
+
+measure_time_without_merkle(n)
+
+Purpose: measure bulk append time to ledger without building merkle each time
+
+Input: n synthetic transactions
+
+Output: elapsed time and final ledger size
+
+Tests: use consistent synthetic data
+
+measure_time_with_merkle(n)
+
+Purpose: do the same but rebuild merkle after each append (prototype approach)
+
+Output: elapsed time
+
+Use: show overhead percentage in report
+
+Reason: required output for project evaluation.
+
+Module: Flask web layer (file: app.py)
+
+Routes to implement after core logic stable.
+
+route_login()
+
+Input: account_id, pin (POST)
+
+Action: call verify_login
+
+Output: success/fail, redirect to dashboard or show error
+
+route_transfer()
+
+Input: to_account_id, amount (POST)
+
+Action: call create_transaction(), enqueue_transaction()
+
+Output: pending response
+
+route_dashboard()
+
+Purpose: serve user data and pending tx status; read-only calls to get_account_details and get_ledger (paginated)
+
+route_admin_panel()
+
+Purpose: show pending txs and admin actions (approve/deny/tamper)
+
+Security: protect with admin flag; for demo you can hardcode admin credentials.
+
+route_verify()
+
+Purpose: trigger verify_integrity and return report
+
+route_rollback()
+
+Purpose: trigger rollback_to_last_valid_state (admin only)
+
+websocket_update()
+
+Purpose: push live updates to connected clients when ledger changes or rollback happens
+
+Note: frontend uses REST for actions and WebSocket for real-time updates.
+
+Testing checklist (run after implementing each module)
+
+Unit tests for hash functions and transaction canonicalization.
+
+Unit tests for enqueue/dequeue and queue persistence.
+
+Integration test: submit tx → approve → ledger append → merkle root change.
+
+Tamper test: tamper tx → verify_integrity finds mismatch → locate_tampered_transaction returns id → rollback restores snapshot.
+
+Performance test: measure times for n=1000, n=10000.
+
+Security checks: wrong PIN denies login; locked account blocks attempts.
+
+Demo script to validate each step (manual)
+
+Start server with seeded users.json (two users, one admin).
+
+Login as user A in browser.
+
+Submit a transfer to B. Observe pending in admin panel.
+
+Admin approves. Observe balances update and merkle_root change on both clients.
+
+Admin tamper on a processed transaction. Run verify. Show mismatch. Trigger rollback. Show restoration.
+
+Run performance test and capture times.
+
+Tips, constraints and failure handling
+
+Always validate inputs (non-negative amounts, existing accounts).
+
+Persist state immediately after changing balances or appending ledger to avoid data loss.
+
+Use atomic save: write to temp file then rename to final to avoid corrupt JSON.
+
+For concurrency, keep single worker for processing to avoid race conditions.
+
+Keep tamper and rollback admin-only and demo-flagged.
+
+Document each function with one-line purpose and inputs/outputs in code comment

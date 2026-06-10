@@ -1,0 +1,522 @@
+It covers frontend, backend, APIs, data model, security, realtime, deployment, and every core function with inputs, outputs, side effects, and errors.
+
+Tech stack (recommended)
+
+Backend: Python, FastAPI.
+
+Fast. Async capable. Easy WebSocket support.
+
+DB: SQLite for prototype.
+
+Simple, file-based, easy to commit to repo. Use SQLAlchemy.
+
+Worker/Queue: DB-backed FIFO (simple) or in-memory circular queue for single-server.
+
+Hashing: hashlib (SHA256) for Merkle, bcrypt for PIN hashing.
+
+Realtime: WebSocket (FastAPI with websockets or Socket.IO).
+
+Frontend: React (single page). Use plain CSS or Tailwind.
+
+Deployment: Frontend to GitHub Pages. Backend to any free/cheap host (Render, Fly, Vercel serverless, or a VPS). Use HTTPS.
+
+High-level architecture
+
+Browser clients (React) connect to server via REST and WebSocket.
+
+Server holds accounts, ledger, Merkle module, queue.
+
+Client sends transfer/login requests to REST.
+
+Server validates, enqueues transaction record (status = pending).
+
+Worker processes the queue sequentially.
+
+Worker appends to ledger, rebuilds Merkle root, stores snapshot, broadcasts update over WebSocket.
+
+Clients display the ledger and balances in real time.
+
+Data models (SQLAlchemy-like)
+
+Account
+
+id: UUID or int (primary key)
+
+account_id: string (human id)
+
+pin_hash: string (bcrypt)
+
+balance: decimal
+
+created_at: datetime
+
+locked_until: datetime nullable
+
+Transaction
+
+id: UUID
+
+amount: decimal
+
+sender_id: FK Account.id
+
+receiver_id: FK Account.id
+
+timestamp: datetime
+
+status: enum [pending, processed, failed, rolled_back]
+
+ledger_index: int nullable (position in ledger after commit)
+
+tx_hash: string (SHA256 of tx content)
+
+meta: JSON nullable
+
+LedgerSnapshot
+
+id: int autoinc
+
+created_at: datetime
+
+merkle_root: string
+
+snapshot_file: filepath or JSON blob (optional)
+
+last_tx_index: int
+
+AuditLog
+
+id, action, actor, details, timestamp
+
+Queue strategy (web-safe)
+Option A (recommended for reliability)
+
+DB-backed queue: Transaction rows with status = pending.
+
+Processing worker: SELECT pending ORDER BY timestamp FOR UPDATE. Mark processing, commit, then apply.
+Benefits: survives server restart. No external Redis required.
+
+Option B (simpler)
+
+In-memory circular queue class used when server single-process.
+
+Must persist ledger to DB quickly to avoid loss.
+
+Merkle module — functions and details
+Module name: merkle.py
+
+tx_to_string(tx: Transaction) -> str
+
+Inputs: transaction object or dict.
+
+Output: canonical string.
+
+Side effect: none.
+
+Note: order fields: id|timestamp|sender|receiver|amount|meta.
+
+hash_data(data: str) -> str
+
+Input: string.
+
+Output: hex SHA256 string.
+
+build_merkle_tree(tx_hashes: List[str]) -> (root: str, tree: List[List[str]])
+
+Input: list of leaf hashes in ledger order.
+
+Output: root hash and optional tree structure (levels).
+
+Behavior: if odd count, duplicate last hash. Pairwise concat then hash.
+
+get_merkle_proof(tx_index: int, tree: List[List[str]]) -> List[(sibling_hash, is_left)]
+
+Input: index of tx in leaves.
+
+Output: merkle proof path.
+
+verify_proof(leaf_hash: str, proof: List, root: str) -> bool
+
+Ledger module — functions and details
+Module name: ledger.py
+
+append_transaction(tx: Transaction) -> ledger_index
+
+Input: transaction object (must have tx_hash).
+
+Output: assigned ledger_index (int).
+
+Side effects: insert Transaction with status processed, set ledger_index, update Balance for accounts (inside DB txn), return index.
+
+remove_transaction(ledger_index: int, reason: str) -> bool
+
+Input: index.
+
+Output: success flag.
+
+Side effects: mark tx as rolled_back, revert balances using inverse operation or restore from snapshot. Use rollback mechanism described below.
+
+get_transactions(offset=0, limit=100) -> List[Transaction]
+
+Input: paging.
+
+Output: transactions ordered by ledger_index.
+
+build_and_store_merkle() -> root
+
+Input: none. Uses processed transactions in order.
+
+Output: new root string.
+
+Side effects: create a LedgerSnapshot row with root and last_tx_index. Optionally store tree.
+
+snapshot_state() -> snapshot_id
+
+Input: none.
+
+Output: snapshot id.
+
+Side effects: store accounts balances and transaction index in snapshot. For SQLite, export JSON of accounts and last_tx_index, or copy DB file.
+
+Rollback strategy (detailed)
+Two safe strategies. Choose one.
+
+Strategy 1, preferred for simplicity and correctness:
+
+After every processed transaction commit, create a snapshot row recording: last_tx_index, merkle_root, accounts balances (JSON) or a copy of DB file.
+
+If fraud detected at tx k, find last valid snapshot with last_tx_index < k. Restore accounts balances from snapshot and delete/mark transactions with index > snapshot.last_tx_index as rolled_back. Rebuild merkle root from remaining transactions. Broadcast rollback event.
+
+Strategy 2, inverse operation log:
+
+For each processed tx, store inverse operation that will revert balances. On rollback, apply inverse ops in reverse order until ledger index restored. This is space efficient but more error prone.
+
+Notes:
+
+For prototype use snapshots every N transactions (e.g., every 1 or 5) to simplify rollback. Snapshots cost space but are clear to explain.
+
+Fraud detection and verification functions
+
+verify_integrity() -> (valid: bool, details)
+
+Rebuild merkle root from DB, compare with latest snapshot/expected root.
+
+If mismatch, perform locate_mismatch().
+
+locate_mismatch() -> (tx_index_or_id)
+
+Binary search approach: split ledger in halves, compute root for each half, find which half differs. Repeat to locate smallest mismatched tx. This is efficient.
+
+API endpoints (REST) — full detail
+Base path: /api/v1
+
+Auth: Use JWT for auth. Use HTTPS.
+
+POST /login
+
+Body: {account_id, pin}
+
+Success: 200 {token, account_id, balance}
+
+Errors: 401 wrong pin, 423 locked
+
+POST /transfer
+
+Auth required.
+
+Body: {to_account_id, amount}
+
+Serverside steps:
+
+verify token and accounts exist.
+
+check balance.
+
+create Transaction row status pending, tx_hash computed.
+
+return 202 {tx_id, status: pending}.
+
+Errors: 400 invalid amount, 402 insufficient balance.
+
+POST /process_next (admin or worker-only)
+
+Secured endpoint called by worker or same server internal process.
+
+Body: none or {max_count}
+
+Action: find oldest pending txs, process sequentially by calling append_transaction and build_and_store_merkle per tx or batch.
+
+Return: summary {processed: n, root: current_root}
+
+GET /transactions?offset=&limit=
+
+Returns processed transactions.
+
+GET /merkle/root
+
+Returns current merkle root and last_tx_index.
+
+POST /verify
+
+Body optional: {root}
+
+Returns: {valid:bool, details, mismatch_tx_id: optional}
+
+POST /rollback
+
+Admin only. Body: {to_snapshot_id} or {to_tx_index}
+
+Action: restore snapshot state.
+
+Return: {success, restored_to_index, new_root}
+
+GET /accounts/{id}
+
+Auth required and permitted only for the owner. Returns balance and last transactions.
+
+WebSocket /ws
+
+Events:
+
+on_connect: authenticate via token.
+
+server->client messages:
+
+ledger_update {tx, new_root, balances_changed}
+
+integrity_alert {details}
+
+rollback_notice {restored_to_index, new_root}
+
+Client receives real-time updates.
+
+Frontend components and what they must do
+
+Login page
+
+Fields: account_id, pin.
+
+On submit: call /login, store token.
+
+Dashboard
+
+Displays selected account balance.
+
+Shows quick transfer form.
+
+Shows notification area for realtime updates.
+
+TransferForm
+
+Fields: to_account_id, amount, confirm button.
+
+On submit: call /transfer, show pending status.
+
+LedgerTable
+
+Paginated table showing ledger entries and tx hashes and ledger index.
+
+Button to view merkle proof for a tx.
+
+MerkleViewer
+
+Show current root.
+
+Option: request proof for tx and verify client-side.
+
+Optional ASCII tree or simple visual levels.
+
+IntegrityReport page
+
+Run verify API.
+
+Show status and mismatch location if any.
+
+Admin panel (optional for demo)
+
+Process queue (if not auto).
+
+Trigger rollback.
+
+Show snapshots list and restore button.
+
+Important frontend behavior details
+
+Use WebSocket to receive ledger updates and balance changes instantly.
+
+For demo, allow client to fetch merkle root and compute local proof for display.
+
+Show transaction pending state until server processes it.
+
+Security details (must cover in presentation)
+
+Always use HTTPS in deployment.
+
+Hash PIN with bcrypt before storing. Never store plaintext PIN.
+
+Use JWT with short expiry and refresh tokens.
+
+Rate limit login attempts. Lock account for a period after 3 failed attempts.
+
+Validate all inputs server-side.
+
+Use parameterized SQL queries (SQLAlchemy does this).
+
+Log all sensitive actions in AuditLog.
+
+Use TLS for WebSocket (wss://).
+
+If you implement encryption over sockets, use TLS rather than custom crypto. For extra credit, show message-level encryption with Fernet for payloads.
+
+Concurrency and consistency
+
+Use DB transactions for balance updates and ledger append.
+
+In SQLAlchemy use session.begin() to ensure atomic updates.
+
+Use row-level locks or SELECT FOR UPDATE when selecting accounts to prevent race conditions.
+
+Worker must process one tx at a time (sequential) or lock accounts involved.
+
+Testing plan (easy to run on demo)
+
+Unit tests for merkle functions: build, proof, verify.
+
+Integration tests for transfer workflow: create accounts, transfer, process queue, assert balances and root changes.
+
+Fraud simulation test: manually modify a stored transaction row, run verify_integrity, expect detection and rollback works.
+
+Load test: simulate many transfers, measure build_and_store_merkle time. Use this data in report.
+
+Deployment and Github workflow
+
+Repo layout
+
+/backend (FastAPI) with requirements.txt
+
+/frontend (React) build files or source
+
+/docs (architecture diagram, README)
+
+CI
+
+GitHub Actions to run tests on push and build backend image.
+
+Deploy
+
+Frontend: GitHub Pages or Netlify/Vercel. Push build.
+
+Backend: Render, Fly, or small VPS. Set up environment variables (DB path, JWT secret).
+
+Domain: optional. Use HTTPS.
+
+Demo mode
+
+Provide a seeded DB with two accounts and some pending transactions.
+
+Add a script seed_db.py to populate test accounts and transactions.
+
+README content (what to explain during presentation)
+
+Project purpose and scope.
+
+Tech stack choices and reasons.
+
+Data model and key tables.
+
+Flow diagram: client -> server -> queue -> ledger -> merkle -> clients.
+
+Security measures and how PIN is stored.
+
+Rollback mechanism and why snapshots chosen.
+
+How to run locally (venv, install, env vars), how to seed DB, how to run frontend.
+
+How to reproduce fraud demo and show rollback.
+
+Performance numbers and notes about scaling.
+
+Files each team member should own (team plan)
+
+Backend lead: API endpoints, auth, DB models, worker, merkle module.
+
+Frontend lead: React components, websocket client, merkle viewer.
+
+Security lead: PIN hashing, JWT, rate limiting, TLS guidance.
+
+DevOps lead: GitHub Actions, deployment scripts, demo DB seeds.
+
+QA lead: tests, create fraud scenarios, measure perf.
+
+Extra polish ideas (optional)
+
+Visual Merkle tree using D3 for presentation.
+
+Export audit log CSV.
+
+Sign merkle root with server private key to show additional non-repudiation.
+
+Two-factor auth for admin rollback actions.
+
+Docker compose for local demo with one command. Commit docker-compose.yml.
+
+Minimal function signatures to implement now (copy-paste friendly)
+Backend (Python/ FastAPI pseudo):
+
+def hash_pin(plain_pin: str) -> str
+def verify_pin(plain_pin: str, pin_hash: str) -> bool
+def tx_to_string(tx: dict) -> str
+def hash_data(s: str) -> str
+def compute_tx_hash(tx: dict) -> str
+def build_merkle_root(tx_hashes: List[str]) -> str
+def get_merkle_proof(tx_index: int) -> List[tuple]
+def verify_merkle_proof(leaf_hash: str, proof: List[tuple], root: str) -> bool
+def create_transaction(sender_id, receiver_id, amount) -> TransactionRow
+def enqueue_transaction(tx_row) -> None
+def process_next_transaction() -> dict # returns processed tx and new root
+def append_transaction_to_ledger(tx_row) -> int # returns ledger_index
+def snapshot_state() -> int # returns snapshot id
+def rollback_to_snapshot(snapshot_id) -> bool
+def verify_integrity() -> (bool, dict)
+
+Demo script sequence to show during presentation
+
+Start server and frontend. Open two browser windows.
+
+Login as account A and B (seeded).
+
+On A, transfer 100 to B. Show API returns pending.
+
+Trigger worker or wait auto-process. Show both UIs update with new balance instantly via WebSocket. Show Merkle root changed.
+
+Manually tamper a transaction in DB (or via admin tamper endpoint). Run Verify. Show integrity alert.
+
+Trigger rollback. Show both clients revert, show restored Merkle root.
+
+Run performance test script: insert 10k pseudo transactions and show times with and without merkle rebuild.
+
+What to prepare for viva / questions
+
+Why Merkle trees protect integrity.
+
+How you detect which transaction changed. Explain binary search method.
+
+Why snapshots are safer than inverse logs.
+
+How you ensure atomicity with DB transactions.
+
+Security weaknesses and how you mitigated them.
+
+Scaling limits and how to scale (use Redis queue, shard DB, use incremental Merkle updates).
+
+Final practical tips
+
+Keep functions small and tested.
+
+Use DB-backed queue to avoid lost pending transactions.
+
+Keep merkle rebuild simple: rebuild from processed transactions each commit for prototype.
+
+Later, implement incremental merkle update if you need speed.
+
+Document each function in code with docstring showing inputs, outputs, side effects, and exceptions.

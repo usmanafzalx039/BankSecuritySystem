@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <!-- Importing your styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='personal_details.css') }}">
+    <style>
+        /* ADMIN SPECIFIC STYLES */
+        .admin-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-top: 15px;
+            color: #e2e8f0;
+        }
+        .admin-table th {
+            text-align: left;
+            padding: 15px;
+            background: rgba(139, 92, 246, 0.15);
+            color: #c4b5fd;
+            border-bottom: 2px solid rgba(139, 92, 246, 0.3);
+            font-weight: 600;
+        }
+        .admin-table td {
+            padding: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            vertical-align: middle;
+        }
+        .btn-sm { padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 0.85em; transition: 0.2s; }
+        .btn-approve { background: #8b5cf6; color: white; }
+        .btn-reject { background: transparent; border: 1px solid #ef4444; color: #ef4444; }
+        .btn-lock { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+        .btn-unlock { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+        .tamper-input { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 5px; border-radius: 4px; width: 80px; }
+        
+        /* Sidebar Active State Fix */
+        .sidebar-item.active {
+            background: linear-gradient(90deg, rgba(139, 92, 246, 0.2), transparent);
+            border-left: 3px solid #8b5cf6;
+        }
+    </style>
+</head>
+<body>
+    <div class="aurora">
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+        <div class="aurora-wave"></div>
+    </div>
+
+    <div class="container">
+        <!-- ADMIN SIDEBAR -->
+        <div class="sidebar">
+            <div style="padding: 20px; font-weight: bold; color: #c4b5fd; font-size: 0.9em; letter-spacing: 1px; text-transform: uppercase;">
+                Admin Console
+            </div>
+
+            <a href="{{ url_for('admin_dashboard', view='queue') }}" class="sidebar-item {{ 'active' if view == 'queue' }}">
+                Queue Review
+            </a>
+            
+            <a href="{{ url_for('admin_dashboard', view='accounts') }}" class="sidebar-item {{ 'active' if view == 'accounts' }}">
+                Manage Accounts
+            </a>
+            
+            <a href="{{ url_for('admin_dashboard', view='ledger') }}" class="sidebar-item {{ 'active' if view == 'ledger' }}">
+                Full Ledger
+            </a>
+
+            <div style="margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;"></div>
+
+            <!-- Profile View Toggle -->
+            <a href="{{ url_for('admin_dashboard', view='profile') }}" class="sidebar-item {{ 'active' if view == 'profile' }}">
+                My Details
+            </a>
+            
+            <a href="{{ url_for('logout') }}" class="sidebar-item signout">
+                Sign Out
+            </a>
+        </div>
+
+        <div class="main-content">
+            
+            {% with messages = get_flashed_messages() %}
+              {% if messages %}
+                <div style="margin-bottom: 20px; padding: 15px; background: rgba(139, 92, 246, 0.15); border: 1px solid #8b5cf6; border-radius: 8px; color: #e2e8f0;">
+                  {% for message in messages %}
+                    ✓ {{ message }}
+                  {% endfor %}
+                </div>
+              {% endif %}
+            {% endwith %}
+
+            <!-- === VIEW: QUEUE === -->
+            {% if view == 'queue' %}
+            <h1>🛡️ Integrity Authorization</h1>
+            <div class="card" style="width: 100%;">
+                <div class="card-title">Pending Transactions</div>
+                {% if queue|length == 0 %}
+                    <div style="padding: 40px; text-align: center; color: #94a3b8;">All Clear! No pending transactions.</div>
+                {% else %}
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Mode</th>
+                                <th>Sender</th>
+                                <th>Receiver</th>
+                                <th>Amount</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for tx in queue %}
+                            <tr>
+                                <td><span class="mode-badge mode-{{ tx.mode }}">{{ tx.mode|upper }}</span></td>
+                                <td>{{ tx.sender_id }}</td>
+                                <td>{{ tx.receiver_id }}</td>
+                                <td>
+                                    <form action="{{ url_for('admin_process') }}" method="POST" id="form-{{ tx.id }}">
+                                        <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                                        <input type="hidden" name="action" value="approve">
+                                        {% if tx.mode == 'fast' %}
+                                            <input type="number" step="0.01" name="amount" value="{{ tx.amount }}" class="tamper-input">
+                                        {% else %}
+                                            <span style="color: #94a3b8;">🔒 ${{ tx.amount }}</span>
+                                            <input type="hidden" name="amount" value="{{ tx.amount }}">
+                                        {% endif %}
+                                    </form>
+                                </td>
+                                <td>
+                                    <button type="button" onclick="document.getElementById('form-{{ tx.id }}').submit()" class="btn-sm btn-approve">Approve</button>
+                                    <form action="{{ url_for('admin_process') }}" method="POST" style="display:inline; margin-left: 5px;">
+                                        <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                                        <input type="hidden" name="action" value="reject">
+                                        <button type="submit" class="btn-sm btn-reject">Reject</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- === VIEW: ACCOUNTS === -->
+            {% if view == 'accounts' %}
+            <h1>👥 User Management</h1>
+            <div class="card" style="width: 100%;">
+                <div class="card-title">System Users</div>
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Account ID</th>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>Balance</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for key, acc in accounts.items() %}
+                        <tr>
+                            <td style="font-family: monospace; color: #c4b5fd;">{{ acc.account_id }}</td>
+                            <td>{{ acc.username }}</td>
+                            <td>{{ acc.role|capitalize }}</td>
+                            <td>${{ acc.balance }}</td>
+                            <td>
+                                {% if acc.is_locked %}
+                                    <span style="color: #f87171;">LOCKED</span>
+                                {% else %}
+                                    <span style="color: #4ade80;">Active</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if acc.role != 'admin' %}
+                                    <form action="{{ url_for('admin_toggle_lock', account_id=acc.account_id) }}" method="POST">
+                                        {% if acc.is_locked %}
+                                            <button class="btn-sm btn-unlock">Unlock</button>
+                                        {% else %}
+                                            <button class="btn-sm btn-lock">Lock</button>
+                                        {% endif %}
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            <!-- === VIEW: LEDGER === -->
+            {% if view == 'ledger' %}
+            <h1>📚 Master Ledger</h1>
+            <div class="card" style="width: 100%;">
+                <div class="card-title">Transaction History</div>
+                {% if ledger|length == 0 %}
+                    <div style="padding: 40px; text-align: center; color: #94a3b8;">Ledger is empty.</div>
+                {% else %}
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Sender</th>
+                                <th>Receiver</th>
+                                <th>Orig. Amount</th>
+                                <th>Final Amount</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for tx in ledger %}
+                            <tr>
+                                <td style="font-size: 0.85em; color: #94a3b8;">{{ tx.timestamp }}</td>
+                                <td>{{ tx.sender }}</td>
+                                <td>{{ tx.receiver }}</td>
+                                <td style="color: #94a3b8;">${{ tx.original_amount }}</td>
+                                <td>
+                                    {% if tx.original_amount != tx.final_amount %}
+                                        <span style="color: #f87171; font-weight: bold;">${{ tx.final_amount }} (Edited)</span>
+                                    {% else %}
+                                        <span style="color: #4ade80;">${{ tx.final_amount }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>APPROVED</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- === VIEW: PROFILE (Embedded Personal Details) === -->
+            {% if view == 'profile' %}
+            <h1>👤 Admin Profile</h1>
+            <div class="details-grid">
+                <div class="details-section">
+                    <div class="card">
+                        <div class="card-title">Account Information</div>
+                        <div class="detail-item">
+                            <span class="detail-label">Name:</span>
+                            <span class="detail-value" data-field="username">{{ user.username }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Role:</span>
+                            <span class="detail-value purple-highlight">Administrator</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">ID:</span>
+                            <span class="detail-value">{{ user.id }}</span>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Contact Info</div>
+                        <div class="detail-item">
+                            <span class="detail-label">Phone:</span>
+                            <span class="detail-value" data-field="phone">{{ user.phone }}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Email:</span>
+                            <span class="detail-value" data-field="email">{{ user.email }}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="profile-section">
+                    <div class="card profile-card">
+                        <div class="profile-content">
+                            <div class="avatar" id="profileAvatar">{{ user.username[0] }}</div>
+                            <div class="profile-name" id="profileName">{{ user.username }}</div>
+                            <div class="profile-email">{{ user.email }}</div>
+                            <div class="security-details">
+                                <div class="detail-item">
+                                    <span class="detail-label">Last Login:</span>
+                                    <span class="detail-value">{{ user.last_login }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="action-button" id="editButton">Edit Profile</button>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+        </div>
+    </div>
+    
+    <!-- Link the Personal Details JS for Profile Editing -->
+    <script src="{{ url_for('static', filename='personal_details.js') }}"></script>
+</body>
+</html>
